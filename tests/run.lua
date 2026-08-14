@@ -128,6 +128,51 @@ test("an unknown placeholder is left as itself", function()
   })
 end)
 
+-- --- where it can go ---
+
+test("a fresh agent is offered for every configured kind", function()
+  send.setup({ agents = { "claude", "codex" }, new_agent_dir = function()
+    return "/tmp/somewhere"
+  end })
+  local dests = send.destinations({})
+
+  eq(#dests, 2, "one per kind, and nothing else when nothing is running")
+  eq(dests[1].fresh, true)
+  eq(dests[1].cwd, "/tmp/somewhere", "opened where the editor is")
+  eq(dests[1].pane, nil, "it does not exist yet, so it has no address")
+end)
+
+test("the ones that already exist are offered before the ones that do not", function()
+  send.setup({ agents = { "claude" } })
+  local dests = send.destinations({
+    { kind = "pi", pane = "w1:p1", cwd = "/a", title = "", refusal = nil },
+  })
+  eq(dests[1].fresh, false, "talking to a running agent costs less than starting one")
+  eq(dests[2].fresh, true)
+end)
+
+test("a fresh agent is offered even when every running one is busy", function()
+  send.setup({ agents = { "claude" } })
+  local dests = send.destinations({
+    { kind = "pi", pane = "w1:p1", cwd = "/a", title = "", refusal = "working — …" },
+  })
+  local free = vim.tbl_filter(function(d)
+    return d.refusal == nil
+  end, dests)
+  eq(#free, 1, "\"everything is busy\" should not mean \"nowhere to go\"")
+  eq(free[1].fresh, true)
+end)
+
+test("the directory is asked for each time, not captured once", function()
+  local where = "/first"
+  send.setup({ agents = { "claude" }, new_agent_dir = function()
+    return where
+  end })
+  eq(send.destinations({})[1].cwd, "/first")
+  where = "/second"
+  eq(send.destinations({})[1].cwd, "/second", "nvim's directory changes while it runs")
+end)
+
 -- --- the herdr layer, against whatever is actually running ---
 
 local herdr = require("agent-send.herdr")
@@ -180,6 +225,61 @@ if herdr.available() then
       end
     end
   end)
+end
+
+-- --- the chain that starts a fresh agent, and undoes itself ---
+--
+-- Run against the real server, and deliberately made to fail at the middle
+-- link: it proves the workspace is created and then cleaned up without
+-- starting an agent that would cost anything.
+
+if herdr.available() then
+  local pane, werr, done = nil, nil, false
+  herdr.create_workspace(vim.fn.getcwd(), "agent-send test probe", function(p, e)
+    pane, werr, done = p, e, true
+  end)
+  vim.wait(10000, function()
+    return done
+  end)
+
+  test("a workspace opens on a directory and hands back a pane", function()
+    if werr then
+      error("herdr said: " .. werr)
+    end
+    if not pane or not pane:match("^%w+:") then
+      error("no usable pane came back: " .. tostring(pane))
+    end
+  end)
+
+  if pane then
+    local aerr, adone = nil, false
+    herdr.start_agent(pane, "nosuchagent", function(e)
+      aerr, adone = e, true
+    end)
+    vim.wait(10000, function()
+      return adone
+    end)
+
+    test("an agent that cannot start is reported, not swallowed", function()
+      if not aerr then
+        error("herdr accepted an agent kind that does not exist")
+      end
+    end)
+
+    local cerr, cdone = nil, false
+    herdr.close_workspace(pane, function(e)
+      cerr, cdone = e, true
+    end)
+    vim.wait(10000, function()
+      return cdone
+    end)
+
+    test("and the workspace is closed again, leaving nothing behind", function()
+      if cerr then
+        error("the cleanup failed, which would leave a window nobody asked for: " .. cerr)
+      end
+    end)
+  end
 end
 
 io.write(("\n%d run, %d failed\n\n"):format(ran, failures))

@@ -115,6 +115,47 @@ function M.agents(on_done)
   end)
 end
 
+--- Opens a workspace on `cwd` and hands back the pane herdr made for it.
+---
+--- `--no-focus` on purpose: asking a question should not throw your terminal
+--- over to a new workspace while you are still reading the answer's subject.
+--- @param cwd string
+--- @param label string
+--- @param on_done fun(pane: string|nil, err: string|nil)
+function M.create_workspace(cwd, label, on_done)
+  call({ "workspace", "create", "--cwd", cwd, "--label", label, "--no-focus" }, function(result, err)
+    if err then
+      return on_done(nil, err)
+    end
+    local pane = result and result.root_pane and result.root_pane.pane_id
+    if type(pane) ~= "string" or pane == "" then
+      return on_done(nil, "herdr made a workspace with no pane in it")
+    end
+    on_done(pane, nil)
+  end)
+end
+
+--- Starts an interactive agent of `kind` in a pane that already exists.
+--- @param pane string
+--- @param kind string
+--- @param on_done fun(err: string|nil)
+function M.start_agent(pane, kind, on_done)
+  call({ "agent", "start", kind, "--kind", kind, "--pane", pane }, function(_, err)
+    on_done(err)
+  end)
+end
+
+--- Closes a workspace. Undoes `create_workspace` and touches no files: the
+--- directory it was opened on was already there and stays as it was.
+--- @param pane string
+--- @param on_done fun(err: string|nil)
+function M.close_workspace(pane, on_done)
+  local workspace = pane:match("^([^:]+)") or pane
+  call({ "workspace", "close", workspace }, function(_, err)
+    on_done(err)
+  end)
+end
+
 --- Hands `text` to the agent in `pane`, without waiting for it to finish.
 --- @param pane string
 --- @param text string

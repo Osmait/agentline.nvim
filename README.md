@@ -60,19 +60,34 @@ will reason confidently about the half it has.
 
 ## Where it goes
 
-The agents that can take work are offered first; the ones that cannot are
-**listed with the reason** rather than hidden, because "all of them are busy"
-is a more useful answer than "none found".
+Two kinds of destination, in one list:
 
-An agent is refused when it is:
+- **an agent already running** — one call, and it is working on your question
+  immediately;
+- **a new agent** — started where neovim is, for when nothing suitable is
+  running or nothing is free.
+
+The running ones come first, because talking to an agent that is already
+sitting there costs less than starting one, and an idle agent in the right
+directory is almost always the better answer.
+
+An agent that cannot take work is left out of the list, but its reason is still
+said: "everything that exists is busy" is worth knowing, and it does not mean
+there is nowhere to go — a fresh one is offered underneath. An agent is refused
+when it is:
 
 - **working** — typing into it mid-task loses its context;
 - **blocked** — it is stopped on a permission prompt and would read your
   question as the answer to that prompt;
 - **unknown** — not knowing is not permission.
 
-With exactly one free agent it does not ask. With several it asks once and
-remembers, so a second question goes to the same place; set
+A fresh agent is three calls chained: a workspace on the directory, an agent
+started in its pane, then the question. If either of the last two fails the
+workspace is closed again, or you would be left with a window you never asked
+for. Closing one touches no files; the directory it opened on was already
+there.
+
+It asks once and remembers, so a second question goes to the same place; set
 `remember_target = false` to be asked every time.
 
 ## Configuration
@@ -90,7 +105,24 @@ require("agent-send").setup({
   }, "\n"),
   remember_target = true,
   max_lines = 400,
+  agents = { "claude", "codex", "opencode", "pi" },
+  new_agent_dir = function()
+    return vim.fn.getcwd()
+  end,
 })
+```
+
+`agents` is what to offer for a new one — herdr decides what it can actually
+start, so an unsupported name comes back as herdr's own refusal rather than a
+guess at one. `new_agent_dir` is where it opens; it is called each time rather
+than read once, since neovim's directory changes while it runs. To start an
+agent at the project root instead:
+
+```lua
+new_agent_dir = function()
+  local root = vim.fs.root(0, ".git")
+  return root or vim.fn.getcwd()
+end,
 ```
 
 The placeholders are `{prompt}`, `{path}`, `{range}`, `{filetype}` and
@@ -110,8 +142,11 @@ nvim --headless -u NONE -c "set rtp+=." -c "luafile tests/run.lua"
 ```
 
 No framework — the plugin is small enough that one would be more code than the
-thing it tests. The last few run against whatever herdr is actually running, so
-they check the JSON is parsed and every agent has a pane that can be addressed.
+thing it tests. The last few run against whatever herdr is actually running:
+they check the JSON is parsed, that every agent has a pane that can be
+addressed, and that the fresh-agent chain cleans up after itself. That last one
+is deliberately made to fail at the middle link, so it proves the workspace is
+created and removed again without starting an agent that would cost anything.
 
 ## A note on the envelope
 

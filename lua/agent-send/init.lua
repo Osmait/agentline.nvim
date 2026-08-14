@@ -35,6 +35,16 @@ local config = {
   }, "\n"),
   remember_target = true,
   max_lines = 400,
+  --- Agents offered for a fresh one. herdr decides what it can actually
+  --- start, so an unsupported name comes back as herdr's own refusal rather
+  --- than a guess at one.
+  agents = { "claude", "codex", "opencode", "pi" },
+  --- Where a fresh agent is opened. Neovim's own directory by default: it is
+  --- where you are, and on a project opened the usual way it is the project.
+  --- @type fun():string
+  new_agent_dir = function()
+    return vim.fn.getcwd()
+  end,
 }
 
 --- The pane last sent to, so a second question does not ask again.
@@ -73,49 +83,86 @@ local function buffer_path()
   return vim.fn.fnamemodify(name, ":p")
 end
 
---- @param agent agent_send.Agent
+--- @class agent_send.Dest
+--- @field kind string        the agent's name
+--- @field pane string|nil    where to send it; nil for one that does not exist yet
+--- @field cwd string         where it works, or would
+--- @field title string
+--- @field refusal string|nil
+--- @field fresh boolean      true when it has to be started first
+
+--- @param d agent_send.Dest
 --- @return string
-local function describe(agent)
-  local where = vim.fn.fnamemodify(agent.cwd, ":t")
-  local head = ("%s · %s"):format(agent.kind, where)
-  if agent.refusal then
-    return ("%s   (%s)"):format(head, agent.refusal)
+local function describe(d)
+  local where = vim.fn.fnamemodify(d.cwd, ":t")
+  if d.fresh then
+    return ("+ new %s in %s"):format(d.kind, where)
   end
-  if agent.title ~= "" then
-    return ("%s   %s"):format(head, agent.title)
+  local head = ("%s · %s"):format(d.kind, where)
+  if d.refusal then
+    return ("%s   (%s)"):format(head, d.refusal)
+  end
+  if d.title ~= "" then
+    return ("%s   %s"):format(head, d.title)
   end
   return head
 end
 
---- Asks which agent, unless there is an obvious answer.
+--- Everywhere the text could go: the agents that exist, then the ones that
+--- would have to be started.
+---
+--- The fresh ones come last because starting an agent costs more than talking
+--- to one that is already sitting there — and because an idle agent in the
+--- right directory is almost always the better answer.
 --- @param agents agent_send.Agent[]
---- @param on_pick fun(agent: agent_send.Agent|nil)
-local function choose(agents, on_pick)
-  local free = vim.tbl_filter(function(a)
-    return a.refusal == nil
-  end, agents)
+--- @return agent_send.Dest[]
+function M.destinations(agents)
+  local out = {}
+  for _, a in ipairs(agents) do
+    table.insert(out, {
+      kind = a.kind,
+      pane = a.pane,
+      cwd = a.cwd,
+      title = a.title,
+      refusal = a.refusal,
+      fresh = false,
+    })
+  end
 
-  if #free == 0 then
-    -- Every one of them listed with its reason, because "all of them are
-    -- busy" is a more useful answer than "none found".
-    local why = {}
-    for _, a in ipairs(agents) do
-      table.insert(why, ("  %s · %s — %s"):format(a.kind, vim.fn.fnamemodify(a.cwd, ":t"), a.refusal))
+  local dir = config.new_agent_dir()
+  for _, kind in ipairs(config.agents) do
+    table.insert(out, { kind = kind, pane = nil, cwd = dir, title = "", refusal = nil, fresh = true })
+  end
+  return out
+end
+
+--- Asks where it should go, unless there is an obvious answer.
+--- @param dests agent_send.Dest[]
+--- @param on_pick fun(dest: agent_send.Dest|nil)
+local function choose(dests, on_pick)
+  local free = vim.tbl_filter(function(d)
+    return d.refusal == nil
+  end, dests)
+
+  -- A refused agent is left out of the list but its reason is kept, so
+  -- "everything that exists is busy" can still be said while a fresh one is
+  -- offered underneath.
+  local busy = {}
+  for _, d in ipairs(dests) do
+    if d.refusal then
+      table.insert(busy, ("  %s · %s — %s"):format(d.kind, vim.fn.fnamemodify(d.cwd, ":t"), d.refusal))
     end
-    local detail = #why > 0 and ("\n" .. table.concat(why, "\n")) or ""
-    vim.notify("agent-send: nothing is free to take it" .. detail, vim.log.levels.WARN)
-    return on_pick(nil)
+  end
+  if #busy > 0 then
+    vim.notify("agent-send: busy —\n" .. table.concat(busy, "\n"), vim.log.levels.INFO)
   end
 
   if config.remember_target and last_pane then
-    for _, a in ipairs(free) do
-      if a.pane == last_pane then
-        return on_pick(a)
+    for _, d in ipairs(free) do
+      if d.pane == last_pane then
+        return on_pick(d)
       end
     end
-  end
-  if #free == 1 then
-    return on_pick(free[1])
   end
 
   vim.ui.select(free, { prompt = "Send to:", format_item = describe }, on_pick)
@@ -158,29 +205,66 @@ end
 local function send(from, to, prompt)
   local message, range, cut = M.compose(from, to, prompt)
 
+  --- @param dest agent_send.Dest
+  --- @param pane string
+  local function deliver(dest, pane)
+    herdr.prompt(pane, message, function(perr)
+      if perr then
+        -- A fresh agent that cannot be given its task is a window nobody
+        -- asked for, so it goes away again. Closing a workspace touches no
+        -- files: the directory it opened on was already there.
+        if dest.fresh then
+          herdr.close_workspace(pane, function() end)
+        end
+        return vim.notify("agent-send: " .. perr, vim.log.levels.ERROR)
+      end
+      last_pane = pane
+      local note = ("agent-send: %s lines sent to %s"):format(range, dest.kind)
+      if dest.fresh then
+        note = note .. (" in %s"):format(vim.fn.fnamemodify(dest.cwd, ":t"))
+      end
+      if cut then
+        note = note .. (" (cut to %d lines)"):format(config.max_lines)
+      end
+      vim.notify(note, vim.log.levels.INFO)
+    end)
+  end
+
+  --- Workspace, then agent, then task. Whatever was made is unmade if the
+  --- step after it fails, or a half-built window is left behind.
+  --- @param dest agent_send.Dest
+  local function start_and_deliver(dest)
+    vim.notify(("agent-send: starting %s in %s…"):format(dest.kind, dest.cwd), vim.log.levels.INFO)
+    local label = ("%s · %s"):format(dest.kind, vim.fn.fnamemodify(dest.cwd, ":t"))
+
+    herdr.create_workspace(dest.cwd, label, function(pane, werr)
+      if werr then
+        return vim.notify("agent-send: " .. werr, vim.log.levels.ERROR)
+      end
+      herdr.start_agent(pane, dest.kind, function(aerr)
+        if aerr then
+          herdr.close_workspace(pane, function() end)
+          return vim.notify("agent-send: " .. aerr, vim.log.levels.ERROR)
+        end
+        deliver(dest, pane)
+      end)
+    end)
+  end
+
   herdr.agents(function(agents, err)
     if err then
       return vim.notify("agent-send: " .. err, vim.log.levels.ERROR)
     end
-    if #agents == 0 then
-      return vim.notify("agent-send: no agents running", vim.log.levels.WARN)
-    end
 
-    choose(agents, function(agent)
-      if not agent then
+    choose(M.destinations(agents), function(dest)
+      if not dest then
         return
       end
-      herdr.prompt(agent.pane, message, function(perr)
-        if perr then
-          return vim.notify("agent-send: " .. perr, vim.log.levels.ERROR)
-        end
-        last_pane = agent.pane
-        local note = ("agent-send: %s lines sent to %s"):format(range, agent.kind)
-        if cut then
-          note = note .. (" (cut to %d lines)"):format(config.max_lines)
-        end
-        vim.notify(note, vim.log.levels.INFO)
-      end)
+      if dest.fresh then
+        start_and_deliver(dest)
+      else
+        deliver(dest, dest.pane)
+      end
     end)
   end)
 end
