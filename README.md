@@ -5,8 +5,11 @@ already running — or starts one in the current project when you need it.
 
 ```
 :'<,'>AgentSend
-Ask the agent: why does this deadlock?
-Send to: claude · sbql   Verificar si cambios están en main
+╭──────────────── Message to agent ────────────────╮
+│ Explain why this can return a stale response.    │
+│                                                  │
+│ Check both the refresh flag and the callback.    │
+╰────────── Ctrl-S send · Esc then q cancel ───────╯
 ```
 
 The agent receives the question, where the lines are, and the lines
@@ -42,7 +45,30 @@ With lazy.nvim:
 | `:'<,'>AgentSend` | asks for a question, then sends the selection |
 | `:'<,'>AgentSend why is this slow?` | sends it without asking |
 | `:AgentSend` | no range, so the whole buffer |
-| `:AgentList` | shows what is running, sends nothing |
+| `:AgentList` | opens the agent panel, sends nothing |
+
+With no inline question, `:AgentSend` opens a multiline Markdown buffer. Write
+as much context as the task needs and press `Ctrl-S` from insert or normal mode
+to send it. `Esc` returns to normal mode; `q` then cancels without sending.
+
+Both `:AgentList` and the destination picker use the same floating cards:
+
+```
+╭────────────────────── Agents ──────────────────────╮
+│ ● pi           idle       agentline.nvim           │
+│   Make the prompt multiline                        │
+│                                                    │
+│ ◌ claude       working    ghline                   │
+│   Refactor the CLI                                 │
+│                                                    │
+│ + codex        new        agentline.nvim           │
+│   Start a new agent in /work/agentline.nvim        │
+╰──────────── j/k move · Enter · q close ────────────╯
+```
+
+The mark and colour distinguish agents that are ready, working, blocked or new.
+Busy agents stay visible with the reason they cannot be interrupted, but cannot
+be selected. Use `j`/`k` or the arrow keys, `Enter` to choose and `q` to close.
 
 ## What actually travels
 

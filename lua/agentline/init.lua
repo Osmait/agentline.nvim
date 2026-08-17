@@ -10,6 +10,7 @@
 --- editor does, so it gets both the location and the text itself.
 
 local herdr = require("agentline.herdr")
+local ui = require("agentline.ui")
 
 local M = {}
 
@@ -88,24 +89,31 @@ end
 --- @field pane string|nil    where to send it; nil for one that does not exist yet
 --- @field cwd string         where it works, or would
 --- @field title string
+--- @field status string
 --- @field refusal string|nil
 --- @field fresh boolean      true when it has to be started first
 
---- @param d agentline.Dest
---- @return string
-local function describe(d)
-  local where = vim.fn.fnamemodify(d.cwd, ":t")
-  if d.fresh then
-    return ("+ new %s in %s"):format(d.kind, where)
+--- @param d agentline.Dest|agentline.Agent
+--- @return agentline.ui.Item
+local function agent_item(d)
+  local fresh = d.fresh == true
+  local status = fresh and "new" or d.status or (d.refusal and "unknown" or "idle")
+  local detail = d.title
+  if fresh then
+    detail = "Start a new agent in " .. d.cwd
+  elseif d.refusal then
+    detail = d.refusal
+  elseif detail == "" then
+    detail = "Ready for a new message"
   end
-  local head = ("%s · %s"):format(d.kind, where)
-  if d.refusal then
-    return ("%s   (%s)"):format(head, d.refusal)
-  end
-  if d.title ~= "" then
-    return ("%s   %s"):format(head, d.title)
-  end
-  return head
+  return {
+    label = d.kind,
+    status = status,
+    cwd = vim.fn.fnamemodify(d.cwd, ":t"),
+    detail = detail,
+    disabled = d.refusal ~= nil,
+    value = d,
+  }
 end
 
 --- Everywhere the text could go: the agents that exist, then the ones that
@@ -124,6 +132,7 @@ function M.destinations(agents)
       pane = a.pane,
       cwd = a.cwd,
       title = a.title,
+      status = a.status,
       refusal = a.refusal,
       fresh = false,
     })
@@ -131,7 +140,15 @@ function M.destinations(agents)
 
   local dir = config.new_agent_dir()
   for _, kind in ipairs(config.agents) do
-    table.insert(out, { kind = kind, pane = nil, cwd = dir, title = "", refusal = nil, fresh = true })
+    table.insert(out, {
+      kind = kind,
+      pane = nil,
+      cwd = dir,
+      title = "",
+      status = "new",
+      refusal = nil,
+      fresh = true,
+    })
   end
   return out
 end
@@ -140,32 +157,18 @@ end
 --- @param dests agentline.Dest[]
 --- @param on_pick fun(dest: agentline.Dest|nil)
 local function choose(dests, on_pick)
-  local free = vim.tbl_filter(function(d)
-    return d.refusal == nil
-  end, dests)
-
-  -- A refused agent is left out of the list but its reason is kept, so
-  -- "everything that exists is busy" can still be said while a fresh one is
-  -- offered underneath.
-  local busy = {}
-  for _, d in ipairs(dests) do
-    if d.refusal then
-      table.insert(busy, ("  %s · %s — %s"):format(d.kind, vim.fn.fnamemodify(d.cwd, ":t"), d.refusal))
-    end
-  end
-  if #busy > 0 then
-    vim.notify("agentline: busy —\n" .. table.concat(busy, "\n"), vim.log.levels.INFO)
-  end
-
   if config.remember_target and last_pane then
-    for _, d in ipairs(free) do
-      if d.pane == last_pane then
+    for _, d in ipairs(dests) do
+      if not d.refusal and d.pane == last_pane then
         return on_pick(d)
       end
     end
   end
 
-  vim.ui.select(free, { prompt = "Send to:", format_item = describe }, on_pick)
+  local items = vim.tbl_map(agent_item, dests)
+  ui.select(items, { title = "Send to agent", empty = "No destinations available" }, function(item)
+    on_pick(item and item.value or nil)
+  end)
 end
 
 --- Builds the message that would be sent, without sending it.
@@ -191,11 +194,13 @@ function M.compose(from, to, prompt)
     ["{filetype}"] = filetype,
     ["{text}"] = text,
   }
-  local message = (config.template:gsub("{%a+}", function(key)
-    -- an unknown placeholder is left as itself, so a typo in a configured
-    -- template looks like a typo instead of vanishing
-    return fields[key]
-  end))
+  local message = (
+    config.template:gsub("{%a+}", function(key)
+      -- an unknown placeholder is left as itself, so a typo in a configured
+      -- template looks like a typo instead of vanishing
+      return fields[key]
+    end)
+  )
   return message, range, cut
 end
 
@@ -288,11 +293,10 @@ function M.send(opts)
     return send(from, to, prompt)
   end
 
-  vim.ui.input({ prompt = "Ask the agent: " }, function(answer)
-    if not answer or vim.trim(answer) == "" then
-      return
+  ui.prompt({ title = "Message to agent" }, function(answer)
+    if answer then
+      send(from, to, answer)
     end
-    send(from, to, vim.trim(answer))
   end)
 end
 
@@ -305,14 +309,8 @@ function M.list()
     if err then
       return vim.notify("agentline: " .. err, vim.log.levels.ERROR)
     end
-    if #agents == 0 then
-      return vim.notify("agentline: no agents running", vim.log.levels.INFO)
-    end
-    local out = {}
-    for _, a in ipairs(agents) do
-      table.insert(out, "  " .. describe(a))
-    end
-    vim.notify(table.concat(out, "\n"), vim.log.levels.INFO)
+    local items = vim.tbl_map(agent_item, agents)
+    ui.list(items, { title = "Agents", empty = "No agents running" })
   end)
 end
 

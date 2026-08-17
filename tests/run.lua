@@ -21,7 +21,14 @@ end
 
 local function eq(got, want, what)
   if got ~= want then
-    error(("%s\n        got:  %s\n        want: %s"):format(what or "mismatch", vim.inspect(got), vim.inspect(want)), 2)
+    error(
+      ("%s\n        got:  %s\n        want: %s"):format(
+        what or "mismatch",
+        vim.inspect(got),
+        vim.inspect(want)
+      ),
+      2
+    )
   end
 end
 
@@ -43,6 +50,7 @@ local function buffer(lines, filetype)
 end
 
 local send = require("agentline")
+local ui = require("agentline.ui")
 
 io.write("\nagentline\n")
 
@@ -70,7 +78,7 @@ test("percent signs in the code survive intact", function()
   -- source code is full of `%`. A format string would come out mangled.
   buffer({ 'printf("%d%% of %s\\n", n, name)' })
   local msg = send.compose(1, 1, "explain")
-  contains(msg, '%d%% of %s', "the line arrived as written")
+  contains(msg, "%d%% of %s", "the line arrived as written")
 end)
 
 test("percent signs in the question survive too", function()
@@ -114,7 +122,10 @@ test("a configured template decides the shape", function()
   local msg = send.compose(1, 1, "look")
   eq(msg, "lua at 1: look")
   send.setup({
-    template = table.concat({ "{prompt}", "", "{path}:{range}", "", "```{filetype}", "{text}", "```" }, "\n"),
+    template = table.concat(
+      { "{prompt}", "", "{path}:{range}", "", "```{filetype}", "{text}", "```" },
+      "\n"
+    ),
   })
 end)
 
@@ -124,16 +135,22 @@ test("an unknown placeholder is left as itself", function()
   local msg = send.compose(1, 1, "hi")
   eq(msg, "hi {nope}", "a typo should look like a typo, not vanish")
   send.setup({
-    template = table.concat({ "{prompt}", "", "{path}:{range}", "", "```{filetype}", "{text}", "```" }, "\n"),
+    template = table.concat(
+      { "{prompt}", "", "{path}:{range}", "", "```{filetype}", "{text}", "```" },
+      "\n"
+    ),
   })
 end)
 
 -- --- where it can go ---
 
 test("a fresh agent is offered for every configured kind", function()
-  send.setup({ agents = { "claude", "codex" }, new_agent_dir = function()
-    return "/tmp/somewhere"
-  end })
+  send.setup({
+    agents = { "claude", "codex" },
+    new_agent_dir = function()
+      return "/tmp/somewhere"
+    end,
+  })
   local dests = send.destinations({})
 
   eq(#dests, 2, "one per kind, and nothing else when nothing is running")
@@ -159,18 +176,89 @@ test("a fresh agent is offered even when every running one is busy", function()
   local free = vim.tbl_filter(function(d)
     return d.refusal == nil
   end, dests)
-  eq(#free, 1, "\"everything is busy\" should not mean \"nowhere to go\"")
+  eq(#free, 1, '"everything is busy" should not mean "nowhere to go"')
   eq(free[1].fresh, true)
 end)
 
 test("the directory is asked for each time, not captured once", function()
   local where = "/first"
-  send.setup({ agents = { "claude" }, new_agent_dir = function()
-    return where
-  end })
+  send.setup({
+    agents = { "claude" },
+    new_agent_dir = function()
+      return where
+    end,
+  })
   eq(send.destinations({})[1].cwd, "/first")
   where = "/second"
   eq(send.destinations({})[1].cwd, "/second", "nvim's directory changes while it runs")
+end)
+
+-- --- the windows ---
+
+test("an agent card shows its state, project and current task", function()
+  local lines, starts = ui.render({
+    {
+      label = "pi",
+      status = "idle",
+      cwd = "agentline.nvim",
+      detail = "Make the prompt multiline",
+      value = {},
+    },
+    {
+      label = "claude",
+      status = "working",
+      cwd = "ghline",
+      detail = "Refactor the CLI",
+      disabled = true,
+      value = {},
+    },
+  }, 76)
+
+  eq(starts[1], 1)
+  eq(starts[2], 4, "each card owns two lines and the gap beneath it")
+  local drawn = table.concat(lines, "\n")
+  contains(drawn, "● pi")
+  contains(drawn, "idle")
+  contains(drawn, "agentline.nvim")
+  contains(drawn, "Make the prompt multiline")
+  contains(drawn, "◌ claude")
+end)
+
+test("the message editor keeps every line", function()
+  local answer = nil
+  local prompt = ui.prompt({ title = "Test message" }, function(value)
+    answer = value
+  end)
+  vim.api.nvim_buf_set_lines(prompt.buf, 0, -1, false, {
+    "Explain both issues:",
+    "",
+    "1. the stale response",
+    "2. the hidden error",
+  })
+  prompt.submit()
+
+  eq(answer, "Explain both issues:\n\n1. the stale response\n2. the hidden error")
+  eq(vim.api.nvim_win_is_valid(prompt.win), false, "sending closes the editor")
+end)
+
+test("the agent picker follows a cursor moved directly onto another card", function()
+  local picked = nil
+  local items = {
+    { label = "pi", status = "idle", cwd = "one", detail = "Ready", value = "pane-1" },
+    { label = "claude", status = "new", cwd = "two", detail = "Start it", value = "new-claude" },
+  }
+  local picker = ui.select(items, { title = "Test agents" }, function(item)
+    picked = item and item.value or nil
+  end)
+
+  -- A mouse click moves Neovim's cursor without calling the j/k mappings.
+  -- Enter must follow that cursor instead of the stale first-item index.
+  local _, starts = ui.render(items, 76)
+  vim.api.nvim_win_set_cursor(picker.win, { starts[2], 0 })
+  picker.choose()
+
+  eq(picked, "new-claude")
+  eq(vim.api.nvim_win_is_valid(picker.win), false, "choosing closes the picker")
 end)
 
 -- --- the herdr layer, against whatever is actually running ---
