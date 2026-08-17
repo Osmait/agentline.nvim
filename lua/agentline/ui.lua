@@ -159,6 +159,11 @@ local function cards(items, opts, on_pick)
     title = opts.title,
     footer = footer,
   })
+
+  -- Ctrl-S submits the message while its editor is still in Insert mode. A
+  -- picker opened from that callback inherits the mode unless it leaves it
+  -- explicitly; arrows still move there, but j/k are treated as inserted text.
+  vim.cmd("stopinsert")
   vim.wo[win].cursorline = #items > 0
   vim.wo[win].cursorlineopt = "line"
   vim.wo[win].wrap = false
@@ -212,31 +217,78 @@ local function cards(items, opts, on_pick)
   end
 
   local map_opts = { buffer = buf, silent = true, nowait = true }
-  vim.keymap.set("n", "j", function()
-    move(1)
-  end, map_opts)
-  vim.keymap.set("n", "<Down>", function()
-    move(1)
-  end, map_opts)
-  vim.keymap.set("n", "k", function()
-    move(-1)
-  end, map_opts)
-  vim.keymap.set("n", "<Up>", function()
-    move(-1)
-  end, map_opts)
-  vim.keymap.set("n", "gg", function()
-    move(1 - current)
-  end, map_opts)
-  vim.keymap.set("n", "G", function()
-    move(#items - current)
-  end, map_opts)
-  vim.keymap.set("n", "<CR>", function()
-    choose()
-  end, map_opts)
+  local modes = { "n", "i" }
+  local function normal(action)
+    return function()
+      vim.cmd("stopinsert")
+      action()
+    end
+  end
+  vim.keymap.set(
+    modes,
+    "j",
+    normal(function()
+      move(1)
+    end),
+    map_opts
+  )
+  vim.keymap.set(
+    modes,
+    "<Down>",
+    normal(function()
+      move(1)
+    end),
+    map_opts
+  )
+  vim.keymap.set(
+    modes,
+    "k",
+    normal(function()
+      move(-1)
+    end),
+    map_opts
+  )
+  vim.keymap.set(
+    modes,
+    "<Up>",
+    normal(function()
+      move(-1)
+    end),
+    map_opts
+  )
+  vim.keymap.set(
+    modes,
+    "gg",
+    normal(function()
+      move(1 - current)
+    end),
+    map_opts
+  )
+  vim.keymap.set(
+    modes,
+    "G",
+    normal(function()
+      move(#items - current)
+    end),
+    map_opts
+  )
+  vim.keymap.set(
+    modes,
+    "<CR>",
+    normal(function()
+      choose()
+    end),
+    map_opts
+  )
   for _, key in ipairs({ "q", "<Esc>", "<C-c>" }) do
-    vim.keymap.set("n", key, function()
-      finish(nil)
-    end, map_opts)
+    vim.keymap.set(
+      modes,
+      key,
+      normal(function()
+        finish(nil)
+      end),
+      map_opts
+    )
   end
 
   if #items > 0 then

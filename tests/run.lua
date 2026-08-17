@@ -241,6 +241,29 @@ test("the message editor keeps every line", function()
   eq(vim.api.nvim_win_is_valid(prompt.win), false, "sending closes the editor")
 end)
 
+test("a picker opened from the message editor leaves Insert mode", function()
+  local picker = nil
+  local items = {
+    { label = "pi", status = "idle", cwd = "one", detail = "Ready", value = "pane-1" },
+    { label = "claude", status = "new", cwd = "two", detail = "Start it", value = "new-claude" },
+  }
+  local prompt = ui.prompt({ title = "Test message" }, function()
+    picker = ui.select(items, { title = "Test agents" }, function() end)
+  end)
+  vim.api.nvim_buf_set_lines(prompt.buf, 0, -1, false, { "A question" })
+  vim.api.nvim_set_current_win(prompt.win)
+  local keys = "i" .. vim.api.nvim_replace_termcodes("<C-s>", true, false, true)
+  vim.api.nvim_feedkeys(keys, "x", false)
+
+  if not picker then
+    error("Ctrl-S did not open the picker")
+  end
+  eq(vim.fn.mode(), "n", "agent navigation must not inherit the message editor's mode")
+  vim.api.nvim_feedkeys("j", "x", false)
+  eq(vim.api.nvim_win_get_cursor(picker.win)[1], 2, "j works immediately after Ctrl-S")
+  picker.cancel()
+end)
+
 test("j moves by one whole agent and Enter chooses it", function()
   local picked = nil
   local items = {
