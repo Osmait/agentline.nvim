@@ -229,6 +229,7 @@ test("the message editor keeps every line", function()
   local prompt = ui.prompt({ title = "Test message" }, function(value)
     answer = value
   end)
+  eq(vim.bo[prompt.buf].filetype, "agentline", "unrelated Markdown plugins must not attach")
   vim.api.nvim_buf_set_lines(prompt.buf, 0, -1, false, {
     "Explain both issues:",
     "",

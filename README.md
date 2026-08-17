@@ -15,6 +15,16 @@ already running — or starts one in the current project when you need it.
 The agent receives the question, where the lines are, and the lines
 themselves — tagged with the buffer's filetype so they arrive as code.
 
+## How it looks
+
+Write the full question without squeezing it into a one-line prompt:
+
+![The multiline message editor over a Lua buffer](assets/message-editor.png)
+
+Then choose a ready agent or start a new one in the current project:
+
+![The agent picker showing ready, working and new agents](assets/agent-picker.png)
+
 ## What it needs
 
 [herdr](https://herdr.dev) on your `PATH`, with a server running. That is
@@ -47,7 +57,7 @@ With lazy.nvim:
 | `:AgentSend` | no range, so the whole buffer |
 | `:AgentList` | opens the agent panel, sends nothing |
 
-With no inline question, `:AgentSend` opens a multiline Markdown buffer. Write
+With no inline question, `:AgentSend` opens a multiline editor. Write
 as much context as the task needs and press `Ctrl-Enter` from insert or normal
 mode to send it. Plain `Enter` inserts a new line. `Esc` returns to normal mode;
 `q` then cancels without sending.

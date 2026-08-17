@@ -335,7 +335,9 @@ end
 function M.prompt(opts, on_done)
   local submit_key = opts.submit_key or "<C-CR>"
   local submit_label = submit_key == "<C-CR>" and "Ctrl-Enter" or submit_key
-  local buf = scratch_buffer("markdown")
+  -- A private filetype keeps Markdown-oriented plugins from attaching to this
+  -- transient editor merely because the message itself may contain Markdown.
+  local buf = scratch_buffer("agentline")
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
   local win, width = open_window(buf, {
     width = math.min(100, math.floor(vim.o.columns * 0.72)),
