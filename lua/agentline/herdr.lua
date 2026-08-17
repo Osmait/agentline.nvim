@@ -11,7 +11,7 @@
 
 local M = {}
 
---- @class agent_send.Agent
+--- @class agentline.Agent
 --- @field kind string        `claude`, `pi`, … — what is running
 --- @field status string      working | idle | blocked | done | unknown
 --- @field cwd string         where it is working
@@ -21,9 +21,9 @@ local M = {}
 
 --- States in which an agent can be handed a new task.
 ---
---- Deliberately the same rule github-tui applies, so the two behave alike:
---- typing into a working agent loses its context, and one stopped on a
---- permission prompt would read the task as the answer to the prompt.
+--- Deliberately conservative: typing into a working agent loses its context,
+--- and one stopped on a permission prompt would read the task as the answer
+--- to the prompt.
 local FREE = { idle = true, done = true }
 
 --- @param status string
@@ -81,7 +81,7 @@ function M.available()
 end
 
 --- Every agent herdr is running, annotated with whether it can take work.
---- @param on_done fun(agents: agent_send.Agent[]|nil, err: string|nil)
+--- @param on_done fun(agents: agentline.Agent[]|nil, err: string|nil)
 function M.agents(on_done)
   call({ "agent", "list" }, function(result, err)
     if err then

@@ -1,7 +1,7 @@
-# agent-send.nvim
+# agentline.nvim
 
 Select some lines, ask a question, and it goes to a coding agent that is
-already running.
+already running — or starts one in the current project when you need it.
 
 ```
 :'<,'>AgentSend
@@ -24,7 +24,7 @@ With lazy.nvim:
 
 ```lua
 {
-  "Osmait/agent-send.nvim",
+  "Osmait/agentline.nvim",
   keys = {
     { "<leader>aa", ":AgentSend<cr>", mode = "v", desc = "Ask an agent about this" },
     { "<leader>al", "<cmd>AgentList<cr>", desc = "Agents running" },
@@ -93,7 +93,7 @@ It asks once and remembers, so a second question goes to the same place; set
 ## Configuration
 
 ```lua
-require("agent-send").setup({
+require("agentline").setup({
   template = table.concat({
     "{prompt}",
     "",
@@ -153,3 +153,7 @@ created and removed again without starting an agent that would cost anything.
 herdr wraps its answers, and prints the *failure* envelope on stdout with a
 zero exit status. A call that went wrong looks exactly like one that went right
 until the envelope is opened, so nothing here trusts the exit status alone.
+
+## License
+
+MIT or Apache-2.0, at your option.

@@ -9,16 +9,16 @@
 --- in a worktree or another checkout cannot resolve `src/foo.rs` the way this
 --- editor does, so it gets both the location and the text itself.
 
-local herdr = require("agent-send.herdr")
+local herdr = require("agentline.herdr")
 
 local M = {}
 
---- @class agent_send.Config
+--- @class agentline.Config
 --- @field template string    how a message is put together
 --- @field remember_target boolean  reuse the last agent instead of asking again
 --- @field max_lines integer  how much of a selection to send
 
---- @type agent_send.Config
+--- @type agentline.Config
 local config = {
   --- Placeholders: {prompt} {path} {range} {filetype} {text}
   ---
@@ -51,7 +51,7 @@ local config = {
 --- @type string|nil
 local last_pane = nil
 
---- @param opts agent_send.Config|nil
+--- @param opts agentline.Config|nil
 function M.setup(opts)
   config = vim.tbl_deep_extend("force", config, opts or {})
 end
@@ -83,7 +83,7 @@ local function buffer_path()
   return vim.fn.fnamemodify(name, ":p")
 end
 
---- @class agent_send.Dest
+--- @class agentline.Dest
 --- @field kind string        the agent's name
 --- @field pane string|nil    where to send it; nil for one that does not exist yet
 --- @field cwd string         where it works, or would
@@ -91,7 +91,7 @@ end
 --- @field refusal string|nil
 --- @field fresh boolean      true when it has to be started first
 
---- @param d agent_send.Dest
+--- @param d agentline.Dest
 --- @return string
 local function describe(d)
   local where = vim.fn.fnamemodify(d.cwd, ":t")
@@ -114,8 +114,8 @@ end
 --- The fresh ones come last because starting an agent costs more than talking
 --- to one that is already sitting there — and because an idle agent in the
 --- right directory is almost always the better answer.
---- @param agents agent_send.Agent[]
---- @return agent_send.Dest[]
+--- @param agents agentline.Agent[]
+--- @return agentline.Dest[]
 function M.destinations(agents)
   local out = {}
   for _, a in ipairs(agents) do
@@ -137,8 +137,8 @@ function M.destinations(agents)
 end
 
 --- Asks where it should go, unless there is an obvious answer.
---- @param dests agent_send.Dest[]
---- @param on_pick fun(dest: agent_send.Dest|nil)
+--- @param dests agentline.Dest[]
+--- @param on_pick fun(dest: agentline.Dest|nil)
 local function choose(dests, on_pick)
   local free = vim.tbl_filter(function(d)
     return d.refusal == nil
@@ -154,7 +154,7 @@ local function choose(dests, on_pick)
     end
   end
   if #busy > 0 then
-    vim.notify("agent-send: busy —\n" .. table.concat(busy, "\n"), vim.log.levels.INFO)
+    vim.notify("agentline: busy —\n" .. table.concat(busy, "\n"), vim.log.levels.INFO)
   end
 
   if config.remember_target and last_pane then
@@ -205,7 +205,7 @@ end
 local function send(from, to, prompt)
   local message, range, cut = M.compose(from, to, prompt)
 
-  --- @param dest agent_send.Dest
+  --- @param dest agentline.Dest
   --- @param pane string
   local function deliver(dest, pane)
     herdr.prompt(pane, message, function(perr)
@@ -216,10 +216,10 @@ local function send(from, to, prompt)
         if dest.fresh then
           herdr.close_workspace(pane, function() end)
         end
-        return vim.notify("agent-send: " .. perr, vim.log.levels.ERROR)
+        return vim.notify("agentline: " .. perr, vim.log.levels.ERROR)
       end
       last_pane = pane
-      local note = ("agent-send: %s lines sent to %s"):format(range, dest.kind)
+      local note = ("agentline: %s lines sent to %s"):format(range, dest.kind)
       if dest.fresh then
         note = note .. (" in %s"):format(vim.fn.fnamemodify(dest.cwd, ":t"))
       end
@@ -232,19 +232,19 @@ local function send(from, to, prompt)
 
   --- Workspace, then agent, then task. Whatever was made is unmade if the
   --- step after it fails, or a half-built window is left behind.
-  --- @param dest agent_send.Dest
+  --- @param dest agentline.Dest
   local function start_and_deliver(dest)
-    vim.notify(("agent-send: starting %s in %s…"):format(dest.kind, dest.cwd), vim.log.levels.INFO)
+    vim.notify(("agentline: starting %s in %s…"):format(dest.kind, dest.cwd), vim.log.levels.INFO)
     local label = ("%s · %s"):format(dest.kind, vim.fn.fnamemodify(dest.cwd, ":t"))
 
     herdr.create_workspace(dest.cwd, label, function(pane, werr)
       if werr then
-        return vim.notify("agent-send: " .. werr, vim.log.levels.ERROR)
+        return vim.notify("agentline: " .. werr, vim.log.levels.ERROR)
       end
       herdr.start_agent(pane, dest.kind, function(aerr)
         if aerr then
           herdr.close_workspace(pane, function() end)
-          return vim.notify("agent-send: " .. aerr, vim.log.levels.ERROR)
+          return vim.notify("agentline: " .. aerr, vim.log.levels.ERROR)
         end
         deliver(dest, pane)
       end)
@@ -253,7 +253,7 @@ local function send(from, to, prompt)
 
   herdr.agents(function(agents, err)
     if err then
-      return vim.notify("agent-send: " .. err, vim.log.levels.ERROR)
+      return vim.notify("agentline: " .. err, vim.log.levels.ERROR)
     end
 
     choose(M.destinations(agents), function(dest)
@@ -273,7 +273,7 @@ end
 --- @param opts table the command's own argument table
 function M.send(opts)
   if not herdr.available() then
-    return vim.notify("agent-send: herdr is not on the PATH", vim.log.levels.ERROR)
+    return vim.notify("agentline: herdr is not on the PATH", vim.log.levels.ERROR)
   end
 
   -- With a range, the selection. Without one, the whole buffer: asking about a
@@ -299,14 +299,14 @@ end
 --- Prints what is running, without sending anything.
 function M.list()
   if not herdr.available() then
-    return vim.notify("agent-send: herdr is not on the PATH", vim.log.levels.ERROR)
+    return vim.notify("agentline: herdr is not on the PATH", vim.log.levels.ERROR)
   end
   herdr.agents(function(agents, err)
     if err then
-      return vim.notify("agent-send: " .. err, vim.log.levels.ERROR)
+      return vim.notify("agentline: " .. err, vim.log.levels.ERROR)
     end
     if #agents == 0 then
-      return vim.notify("agent-send: no agents running", vim.log.levels.INFO)
+      return vim.notify("agentline: no agents running", vim.log.levels.INFO)
     end
     local out = {}
     for _, a in ipairs(agents) do

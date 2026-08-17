@@ -42,9 +42,9 @@ local function buffer(lines, filetype)
   return buf
 end
 
-local send = require("agent-send")
+local send = require("agentline")
 
-io.write("\nagent-send\n")
+io.write("\nagentline\n")
 
 test("a selection travels with its path, its range and its text", function()
   buffer({ "one", "two", "three", "four" }, "rust")
@@ -175,7 +175,7 @@ end)
 
 -- --- the herdr layer, against whatever is actually running ---
 
-local herdr = require("agent-send.herdr")
+local herdr = require("agentline.herdr")
 
 test("herdr is reachable", function()
   if not herdr.available() then
@@ -235,7 +235,7 @@ end
 
 if herdr.available() then
   local pane, werr, done = nil, nil, false
-  herdr.create_workspace(vim.fn.getcwd(), "agent-send test probe", function(p, e)
+  herdr.create_workspace(vim.fn.getcwd(), "agentline test probe", function(p, e)
     pane, werr, done = p, e, true
   end)
   vim.wait(10000, function()
