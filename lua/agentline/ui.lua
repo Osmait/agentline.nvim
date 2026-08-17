@@ -160,9 +160,9 @@ local function cards(items, opts, on_pick)
     footer = footer,
   })
 
-  -- Ctrl-S submits the message while its editor is still in Insert mode. A
-  -- picker opened from that callback inherits the mode unless it leaves it
-  -- explicitly; arrows still move there, but j/k are treated as inserted text.
+  -- Submitting from the message editor happens while it is still in Insert
+  -- mode. A picker opened from that callback inherits the mode unless it
+  -- leaves explicitly; arrows still move there, but j/k become inserted text.
   vim.cmd("stopinsert")
   vim.wo[win].cursorline = #items > 0
   vim.wo[win].cursorlineopt = "line"
@@ -327,19 +327,21 @@ local function message_height(buf, width)
   return clamp(height + 1, 5, math.max(5, math.floor(vim.o.lines * 0.45)))
 end
 
---- Opens a real buffer rather than a one-line command prompt. Ctrl-S submits;
---- Esc leaves insert mode and q closes without sending.
---- @param opts { title: string|nil }
+--- Opens a real buffer rather than a one-line command prompt. Ctrl-Enter
+--- submits by default; Enter remains a newline.
+--- @param opts { title: string|nil, submit_key: string|nil }
 --- @param on_done fun(answer: string|nil)
 --- @return table handle
 function M.prompt(opts, on_done)
+  local submit_key = opts.submit_key or "<C-CR>"
+  local submit_label = submit_key == "<C-CR>" and "Ctrl-Enter" or submit_key
   local buf = scratch_buffer("markdown")
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
   local win, width = open_window(buf, {
     width = math.min(100, math.floor(vim.o.columns * 0.72)),
     height = 7,
     title = opts.title or "Message to agent",
-    footer = "Ctrl-S send · Esc then q cancel",
+    footer = submit_label .. " send · Esc then q cancel",
   })
   vim.wo[win].wrap = true
   vim.wo[win].linebreak = true
@@ -368,7 +370,7 @@ function M.prompt(opts, on_done)
   end
 
   local map_opts = { buffer = buf, silent = true }
-  vim.keymap.set({ "n", "i" }, "<C-s>", submit, map_opts)
+  vim.keymap.set({ "n", "i" }, submit_key, submit, map_opts)
   vim.keymap.set("n", "q", function()
     finish(nil)
   end, map_opts)

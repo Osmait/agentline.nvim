@@ -18,6 +18,7 @@ local M = {}
 --- @field template string    how a message is put together
 --- @field remember_target boolean  reuse the last agent instead of asking again
 --- @field max_lines integer  how much of a selection to send
+--- @field submit_key string  mapping that sends the multiline message
 
 --- @type agentline.Config
 local config = {
@@ -36,6 +37,7 @@ local config = {
   }, "\n"),
   remember_target = true,
   max_lines = 400,
+  submit_key = "<C-CR>",
   --- Agents offered for a fresh one. herdr decides what it can actually
   --- start, so an unsupported name comes back as herdr's own refusal rather
   --- than a guess at one.
@@ -293,7 +295,7 @@ function M.send(opts)
     return send(from, to, prompt)
   end
 
-  ui.prompt({ title = "Message to agent" }, function(answer)
+  ui.prompt({ title = "Message to agent", submit_key = config.submit_key }, function(answer)
     if answer then
       send(from, to, answer)
     end

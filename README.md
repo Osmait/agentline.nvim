@@ -9,7 +9,7 @@ already running — or starts one in the current project when you need it.
 │ Explain why this can return a stale response.    │
 │                                                  │
 │ Check both the refresh flag and the callback.    │
-╰────────── Ctrl-S send · Esc then q cancel ───────╯
+╰──────── Ctrl-Enter send · Esc then q cancel ─────╯
 ```
 
 The agent receives the question, where the lines are, and the lines
@@ -48,8 +48,9 @@ With lazy.nvim:
 | `:AgentList` | opens the agent panel, sends nothing |
 
 With no inline question, `:AgentSend` opens a multiline Markdown buffer. Write
-as much context as the task needs and press `Ctrl-S` from insert or normal mode
-to send it. `Esc` returns to normal mode; `q` then cancels without sending.
+as much context as the task needs and press `Ctrl-Enter` from insert or normal
+mode to send it. Plain `Enter` inserts a new line. `Esc` returns to normal mode;
+`q` then cancels without sending.
 
 Both `:AgentList` and the destination picker use the same floating cards:
 
@@ -131,12 +132,16 @@ require("agentline").setup({
   }, "\n"),
   remember_target = true,
   max_lines = 400,
+  submit_key = "<C-CR>",
   agents = { "claude", "codex", "opencode", "pi" },
   new_agent_dir = function()
     return vim.fn.getcwd()
   end,
 })
 ```
+
+`submit_key` accepts any Neovim key notation if `Ctrl-Enter` is already taken.
+Plain `Enter` is deliberately left to the multiline editor.
 
 `agents` is what to offer for a new one — herdr decides what it can actually
 start, so an unsupported name comes back as herdr's own refusal rather than a

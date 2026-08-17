@@ -241,6 +241,24 @@ test("the message editor keeps every line", function()
   eq(vim.api.nvim_win_is_valid(prompt.win), false, "sending closes the editor")
 end)
 
+test("plain Enter adds a line instead of sending the message", function()
+  local sent = false
+  local prompt = ui.prompt({ title = "Test message" }, function()
+    sent = true
+  end)
+  vim.api.nvim_buf_set_lines(prompt.buf, 0, -1, false, { "First thought" })
+  vim.api.nvim_set_current_win(prompt.win)
+  local keys = "A" .. vim.api.nvim_replace_termcodes("<CR>Second thought<Esc>", true, false, true)
+  vim.api.nvim_feedkeys(keys, "x", false)
+
+  eq(sent, false, "Enter must not submit")
+  eq(
+    table.concat(vim.api.nvim_buf_get_lines(prompt.buf, 0, -1, false), "\n"),
+    "First thought\nSecond thought"
+  )
+  prompt.cancel()
+end)
+
 test("a picker opened from the message editor leaves Insert mode", function()
   local picker = nil
   local items = {
@@ -252,15 +270,15 @@ test("a picker opened from the message editor leaves Insert mode", function()
   end)
   vim.api.nvim_buf_set_lines(prompt.buf, 0, -1, false, { "A question" })
   vim.api.nvim_set_current_win(prompt.win)
-  local keys = "i" .. vim.api.nvim_replace_termcodes("<C-s>", true, false, true)
+  local keys = "i" .. vim.api.nvim_replace_termcodes("<C-CR>", true, false, true)
   vim.api.nvim_feedkeys(keys, "x", false)
 
   if not picker then
-    error("Ctrl-S did not open the picker")
+    error("Ctrl-Enter did not open the picker")
   end
   eq(vim.fn.mode(), "n", "agent navigation must not inherit the message editor's mode")
   vim.api.nvim_feedkeys("j", "x", false)
-  eq(vim.api.nvim_win_get_cursor(picker.win)[1], 2, "j works immediately after Ctrl-S")
+  eq(vim.api.nvim_win_get_cursor(picker.win)[1], 2, "j works immediately after Ctrl-Enter")
   picker.cancel()
 end)
 
