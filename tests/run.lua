@@ -196,7 +196,7 @@ end)
 -- --- the windows ---
 
 test("an agent card shows its state, project and current task", function()
-  local lines, starts = ui.render({
+  local lines, starts, details = ui.render({
     {
       label = "pi",
       status = "idle",
@@ -215,13 +215,13 @@ test("an agent card shows its state, project and current task", function()
   }, 76)
 
   eq(starts[1], 1)
-  eq(starts[2], 4, "each card owns two lines and the gap beneath it")
-  local drawn = table.concat(lines, "\n")
-  contains(drawn, "● pi")
-  contains(drawn, "idle")
-  contains(drawn, "agentline.nvim")
-  contains(drawn, "Make the prompt multiline")
-  contains(drawn, "◌ claude")
+  eq(starts[2], 2, "each card owns exactly one cursor line")
+  local heads = table.concat(lines, "\n")
+  contains(heads, "● pi")
+  contains(heads, "idle")
+  contains(heads, "agentline.nvim")
+  contains(details[1], "Make the prompt multiline")
+  contains(heads, "◌ claude")
 end)
 
 test("the message editor keeps every line", function()
@@ -241,7 +241,7 @@ test("the message editor keeps every line", function()
   eq(vim.api.nvim_win_is_valid(prompt.win), false, "sending closes the editor")
 end)
 
-test("the agent picker follows a cursor moved directly onto another card", function()
+test("j moves by one whole agent and Enter chooses it", function()
   local picked = nil
   local items = {
     { label = "pi", status = "idle", cwd = "one", detail = "Ready", value = "pane-1" },
@@ -251,10 +251,10 @@ test("the agent picker follows a cursor moved directly onto another card", funct
     picked = item and item.value or nil
   end)
 
-  -- A mouse click moves Neovim's cursor without calling the j/k mappings.
-  -- Enter must follow that cursor instead of the stale first-item index.
   local _, starts = ui.render(items, 76)
-  vim.api.nvim_win_set_cursor(picker.win, { starts[2], 0 })
+  eq(vim.api.nvim_buf_line_count(picker.buf), 2, "details are not cursor lines")
+  vim.api.nvim_feedkeys("j", "x", false)
+  eq(vim.api.nvim_win_get_cursor(picker.win)[1], starts[2], "j reaches the next agent")
   picker.choose()
 
   eq(picked, "new-claude")

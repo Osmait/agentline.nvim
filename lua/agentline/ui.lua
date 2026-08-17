@@ -102,33 +102,35 @@ end
 --- @field disabled boolean|nil
 --- @field value any
 
---- Turns agent cards into buffer lines and remembers where each card begins.
+--- Turns each agent into one real buffer line. Its task and the visual gap
+--- beneath it are virtual lines, so Neovim's cursor can only land on agents.
 --- @param items agentline.ui.Item[]
 --- @param width integer
---- @return string[] lines, integer[] starts
+--- @return string[] lines, integer[] starts, string[] details
 function M.render(items, width)
-  local lines, starts = {}, {}
+  local lines, starts, details = {}, {}, {}
   local detail_width = math.max(1, width - 4)
   for index, item in ipairs(items) do
-    starts[index] = #lines + 1
+    starts[index] = index
     local status = item.status ~= "" and item.status or "unknown"
     local mark = STATUS_MARK[status] or STATUS_MARK.unknown
     local head = (" %s %s%s%s"):format(mark, pad(item.label, 14), pad(status, 11), item.cwd)
     table.insert(lines, truncate(head, width))
-    table.insert(lines, "   " .. truncate(item.detail, detail_width))
-    if index < #items then
-      table.insert(lines, "")
-    end
+    details[index] = "   " .. truncate(item.detail, detail_width)
   end
-  return lines, starts
+  return lines, starts, details
 end
 
-local function paint_items(buf, items, starts)
+local function paint_items(buf, items, starts, details)
   vim.api.nvim_buf_clear_namespace(buf, namespace, 0, -1)
   for index, item in ipairs(items) do
     local group = STATUS_HIGHLIGHT[item.status] or STATUS_HIGHLIGHT.unknown
     vim.api.nvim_buf_add_highlight(buf, namespace, group, starts[index] - 1, 0, -1)
-    vim.api.nvim_buf_add_highlight(buf, namespace, "Comment", starts[index], 0, -1)
+    local virtual = { { { details[index], "Comment" } } }
+    if index < #items then
+      table.insert(virtual, { { "", "NormalFloat" } })
+    end
+    vim.api.nvim_buf_set_extmark(buf, namespace, starts[index] - 1, 0, { virt_lines = virtual })
   end
 end
 
@@ -141,9 +143,11 @@ end
 local function cards(items, opts, on_pick)
   local buf = scratch_buffer("agentline")
   local width = window_size(76, 1)
-  local lines, starts = M.render(items, width)
+  local lines, starts, details = M.render(items, width)
+  local display_height = #items * 3 - 1
   if #lines == 0 then
     lines = { "", "  " .. (opts.empty or "No agents running"), "" }
+    display_height = #lines
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
@@ -151,14 +155,14 @@ local function cards(items, opts, on_pick)
   local footer = on_pick and "j/k move · Enter choose · q close" or "j/k move · q close"
   local win = open_window(buf, {
     width = 76,
-    height = math.min(#lines, 18),
+    height = math.min(display_height, 18),
     title = opts.title,
     footer = footer,
   })
   vim.wo[win].cursorline = #items > 0
   vim.wo[win].cursorlineopt = "line"
   vim.wo[win].wrap = false
-  paint_items(buf, items, starts)
+  paint_items(buf, items, starts, details)
 
   local current = 1
   local finished = false
